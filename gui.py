@@ -1,5 +1,6 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
 
+from pynput import keyboard
 from key_sender import key_down, key_up
 from window_manager import list_windows
 from script_engine import ScriptEngine
@@ -12,7 +13,7 @@ class AutoKeyGUI(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('AutoKey GUI')
-        self.resize(720, 520)
+        self.resize(800, 600)
         self.windows = []
         self.engine = None
         self.running_thread = None
@@ -20,12 +21,19 @@ class AutoKeyGUI(QtWidgets.QWidget):
         self.pause_condition = threading.Condition()
         self.init_ui()
         self.refresh_windows()
+        # 全局热键
+        self.hotkey_pause = keyboard.Key.f8
+        self.hotkey_resume = keyboard.Key.f9
+
+        self.hotkey_listener = keyboard.Listener(on_press=self.on_global_key)
+        self.hotkey_listener.daemon = True
+        self.hotkey_listener.start()
 
     def init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
 
         self.window_list = QtWidgets.QComboBox()
-        self.btn_refresh = QtWidgets.QPushButton('刷新窗口')
+        self.btn_refresh = QtWidgets.QPushButton('刷新进程列表')
         hl = QtWidgets.QHBoxLayout()
         hl.addWidget(self.window_list)
         hl.addWidget(self.btn_refresh)
@@ -44,11 +52,42 @@ class AutoKeyGUI(QtWidgets.QWidget):
         self.status_label.setStyleSheet('font-weight: bold; color: gray;')
         layout.addWidget(self.status_label)
 
-        # 暂停按钮
+        # 暂停/重置 按钮
+        hl_ctrl = QtWidgets.QHBoxLayout()
+
         self.btn_pause = QtWidgets.QPushButton('暂停')
         self.btn_pause.setEnabled(False)
-        layout.addWidget(self.btn_pause)
+
+        self.btn_reset = QtWidgets.QPushButton('重置')
+        self.btn_reset.setEnabled(False)
+
+        hl_ctrl.addWidget(self.btn_pause)
+        hl_ctrl.addWidget(self.btn_reset)
+
+        layout.addLayout(hl_ctrl)
+
         self.btn_pause.clicked.connect(self.toggle_pause)
+        self.btn_reset.clicked.connect(self.reset_task)
+        # 全局热键暂停设置
+        hotkey_box = QtWidgets.QGroupBox('全局热键设置')
+        hotkey_layout = QtWidgets.QHBoxLayout(hotkey_box)
+        hotkey_box.setMaximumHeight(120)
+        self.combo_pause_key = QtWidgets.QComboBox()
+        self.combo_resume_key = QtWidgets.QComboBox()
+
+        for i in range(1, 13):
+            self.combo_pause_key.addItem(f'F{i}')
+            self.combo_resume_key.addItem(f'F{i}')
+
+        self.combo_pause_key.setCurrentText('F8')
+        self.combo_resume_key.setCurrentText('F9')
+
+        hotkey_layout.addWidget(QtWidgets.QLabel('暂停'))
+        hotkey_layout.addWidget(self.combo_pause_key)
+        hotkey_layout.addWidget(QtWidgets.QLabel('继续'))
+        hotkey_layout.addWidget(self.combo_resume_key)
+
+        layout.addWidget(hotkey_box)
 
         # 简单模式（组合键）
         box1 = QtWidgets.QGroupBox('简单模式（按下你真实键盘组合）')
@@ -200,6 +239,16 @@ WAIT 0.5''')
                 self.log_warning("任务停止超时，强制终止")
                 # 由于Python线程无法强制终止，这里只能等待
 
+    def reset_task(self):
+        self.log_info("重置任务")
+
+        # 停止线程
+        self.stop_current_task()
+
+        # 状态恢复
+        self.is_paused = False
+        self.update_ui_idle()
+
     def update_ui_running(self):
         """更新UI为运行状态"""
         self.status_label.setText('状态：Running')
@@ -208,6 +257,7 @@ WAIT 0.5''')
         self.btn_adv.setEnabled(False)
         self.btn_pause.setEnabled(True)
         self.btn_pause.setText('暂停')
+        self.btn_reset.setEnabled(True)
 
     def update_ui_idle(self):
         """更新UI为空闲状态"""
@@ -217,8 +267,27 @@ WAIT 0.5''')
         self.btn_adv.setEnabled(True)
         self.btn_pause.setEnabled(False)
         self.btn_pause.setText('暂停')
+        self.btn_reset.setEnabled(False)
 
-    # 日志方法（新增）
+    def on_hotkey_pause(self):
+        if self.running_thread and self.running_thread.is_alive() and not self.is_paused:
+            self.log_info("【全局热键】暂停 (F8)")
+            self.toggle_pause()
+
+    def on_hotkey_resume(self):
+        if self.running_thread and self.running_thread.is_alive() and self.is_paused:
+            self.log_info("【全局热键】继续 (F9)")
+            self.toggle_pause()
+
+    def on_global_key(self, key):
+        try:
+            if key == self.hotkey_pause:
+                self.on_hotkey_pause()
+            elif key == self.hotkey_resume:
+                self.on_hotkey_resume()
+        except Exception:
+            pass
+    # 日志方法
     def log_info(self, msg):
         print(f"[INFO] {msg}")
         self.status_label.setText(f"状态：{msg}")
