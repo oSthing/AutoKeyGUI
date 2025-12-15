@@ -19,8 +19,7 @@ class AutoKeyGUI(QtWidgets.QWidget):
         self.running_thread = None
         self.is_paused = False
         self.pause_condition = threading.Condition()
-        self.init_ui()
-        self.refresh_windows()
+
         # 全局热键
         self.hotkey_pause = keyboard.Key.f8
         self.hotkey_resume = keyboard.Key.f9
@@ -29,11 +28,31 @@ class AutoKeyGUI(QtWidgets.QWidget):
         self.hotkey_listener.daemon = True
         self.hotkey_listener.start()
 
+        # 初始化UI
+        self.init_ui()
+
     def init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
 
+        # 创建选项卡控件
+        self.tabs = QtWidgets.QTabWidget()
+        layout.addWidget(self.tabs)
+
+        # 第一个选项卡：主功能
+        self.tab_main = QtWidgets.QWidget()
+        self.init_main_tab()
+        self.tabs.addTab(self.tab_main, "主功能")
+
+        # 第二个选项卡：日志输出
+        self.tab_logs = QtWidgets.QWidget()
+        self.init_logs_tab()
+        self.tabs.addTab(self.tab_logs, "日志输出")
+
+    def init_main_tab(self):
+        layout = QtWidgets.QVBoxLayout(self.tab_main)
+
         self.window_list = QtWidgets.QComboBox()
-        self.btn_refresh = QtWidgets.QPushButton('刷新进程列表')
+        self.btn_refresh = QtWidgets.QPushButton('刷新窗口')
         hl = QtWidgets.QHBoxLayout()
         hl.addWidget(self.window_list)
         hl.addWidget(self.btn_refresh)
@@ -68,6 +87,7 @@ class AutoKeyGUI(QtWidgets.QWidget):
 
         self.btn_pause.clicked.connect(self.toggle_pause)
         self.btn_reset.clicked.connect(self.reset_task)
+
         # 全局热键暂停设置
         hotkey_box = QtWidgets.QGroupBox('全局热键设置')
         hotkey_layout = QtWidgets.QHBoxLayout(hotkey_box)
@@ -120,6 +140,13 @@ WAIT 0.5''')
         self.btn_adv.clicked.connect(self.run_advanced)
 
         self.captured_keys = []
+
+    def init_logs_tab(self):
+        layout = QtWidgets.QVBoxLayout(self.tab_logs)
+
+        self.log_output = QtWidgets.QPlainTextEdit()
+        self.log_output.setReadOnly(True)
+        layout.addWidget(self.log_output)
 
     def refresh_windows(self):
         self.window_list.clear()
@@ -289,25 +316,35 @@ WAIT 0.5''')
             pass
     # 日志方法
     def log_info(self, msg):
-        print(f"[INFO] {msg}")
+        self.append_log(f"[INFO] {msg}")
         self.status_label.setText(f"状态：{msg}")
 
     def log_debug(self, msg):
-        print(f"[DEBUG] {msg}")
-        # 可选：在状态栏显示调试信息
-        if "DOWN" in msg or "UP" in msg:
-            self.status_label.setText(f"状态：{msg}")
+        self.append_log(f"[DEBUG] {msg}")
 
     def log_error(self, msg):
-        print(f"[ERROR] {msg}")
+        self.append_log(f"[ERROR] {msg}")
         self.status_label.setText(f"状态：错误: {msg}")
         self.status_label.setStyleSheet('font-weight: bold; color: red;')
 
     def log_warning(self, msg):
-        print(f"[WARNING] {msg}")
+        self.append_log(f"[WARNING] {msg}")
         self.status_label.setText(f"状态：警告: {msg}")
         self.status_label.setStyleSheet('font-weight: bold; color: #FFA500;')
 
+    def append_log(self, msg):
+        QtCore.QMetaObject.invokeMethod(
+            self.log_output,
+            "appendPlainText",
+            QtCore.Qt.QueuedConnection,
+            QtCore.Q_ARG(str, msg)
+        )
+        max_lines = 1000
+        if self.log_output.blockCount() > max_lines:
+            cursor = self.log_output.textCursor()
+            cursor.movePosition(QtGui.QTextCursor.Start)
+            cursor.select(QtGui.QTextCursor.BlockUnderCursor)
+            cursor.removeSelectedText()
 
 class CustomKeyCapture(QtWidgets.QLineEdit):
     """
