@@ -11,4 +11,5 @@ def list_windows():
                 result.append((hwnd, title))
 
     win32gui.EnumWindows(enum, None)
+    print(result)
     return result
