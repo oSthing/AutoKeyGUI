@@ -180,26 +180,23 @@ WAIT 0.5''')
     def run_simple_thread(self, hwnd, keys, interval):
         """带暂停功能的运行线程"""
         self.is_paused = False
+        self.stop_thread = False
         try:
-            while True:
-                # 检查是否暂停
+            while not self.stop_thread:  # 检查标志位
                 with self.pause_condition:
-                    while self.is_paused:
+                    while self.is_paused and not self.stop_thread:
                         self.pause_condition.wait()
-
-                # 执行按键
+                if self.stop_thread:
+                    break
                 for k in keys:
                     if k in KEY_MAP:
                         key_down(hwnd, KEY_MAP[k])
                         self.log_debug(f"DOWN: {k}")
-
                 time.sleep(0.05)
-
                 for k in reversed(keys):
                     if k in KEY_MAP:
                         key_up(hwnd, KEY_MAP[k])
                         self.log_debug(f"UP: {k}")
-
                 time.sleep(interval)
         except Exception as e:
             self.log_error(f"运行错误: {str(e)}")
@@ -257,14 +254,17 @@ WAIT 0.5''')
         """停止当前运行任务"""
         if self.running_thread and self.running_thread.is_alive():
             self.log_info("正在停止运行任务...")
-            # 由于线程可能卡在等待中，我们通过设置标志来唤醒
-            self.is_paused = True
+            self.stop_thread = True  # 设置标志位通知线程停止
+            self.is_paused = True  # 防止线程卡在暂停状态
             with self.pause_condition:
-                self.pause_condition.notify_all()
-            self.running_thread.join(timeout=1.0)  # 等待1秒
+                self.pause_condition.notify_all()  # 唤醒线程
+            self.running_thread.join(timeout=1.0)  # 等待线程结束
             if self.running_thread.is_alive():
-                self.log_warning("任务停止超时，强制终止")
-                # 由于Python线程无法强制终止，这里只能等待
+                self.log_warning("任务停止超时，线程未完全退出")
+            else:
+                self.log_info("任务已成功停止")
+        self.running_thread = None
+        self.stop_thread = False  # 重置标志位
 
     def reset_task(self):
         self.log_info("重置任务")
@@ -391,7 +391,7 @@ class CustomKeyCapture(QtWidgets.QLineEdit):
     def keyPressEvent(self, event: QtGui.QKeyEvent):
         self._keys.clear()
 
-        # 1️⃣ 修饰键
+        # 修饰键
         mods = event.modifiers()
         if mods & QtCore.Qt.ControlModifier:
             self._keys.add('CTRL')
@@ -400,7 +400,7 @@ class CustomKeyCapture(QtWidgets.QLineEdit):
         if mods & QtCore.Qt.AltModifier:
             self._keys.add('ALT')
 
-        # 2️⃣ 主键
+        # 主键
         key = event.key()
 
         if key in self.QT_KEY_MAP:
