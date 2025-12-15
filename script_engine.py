@@ -48,7 +48,13 @@ class ScriptEngine:
                 while not lines[i].startswith('}'):
                     block.append(lines[i])
                     i += 1
-                for _ in range(count):
-                    self._exec(block)
+                if count == 0:  # 无限循环
+                    while self.running:
+                        self._exec(block)
+                else:
+                    for _ in range(count):
+                        if not self.running:
+                            break
+                        self._exec(block)
 
             i += 1
