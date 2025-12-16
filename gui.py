@@ -2,7 +2,7 @@ from PyQt5 import QtCore, QtGui
 from pynput import keyboard
 import threading
 import time
-from PyQt5.QtWidgets import QWidget, QVBoxLayout
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTextEdit
 from qfluentwidgets import (
     FluentWindow,
     PushButton,
@@ -17,15 +17,21 @@ from qfluentwidgets import (
     NavigationItemPosition,
     FluentIcon, CaptionLabel
 )
-
+from log_system import Logger, LogLevel
 from key_sender import key_down, key_up
 from window_manager import list_windows
 from script_engine import ScriptEngine
 from keymap import KEY_MAP
 
+LOG_COLORS = {
+    LogLevel.DEBUG: "#888888",
+    LogLevel.INFO:  "#4FC1FF",
+    LogLevel.WARN:  "#FFA500",
+    LogLevel.ERROR: "#FF4C4C",
+}
 
 class AutoKeyGUI(FluentWindow):
-
+    ui_log_signal = QtCore.pyqtSignal(str)
     def __init__(self):
         super().__init__()
 
@@ -36,6 +42,9 @@ class AutoKeyGUI(FluentWindow):
         self.engine = None
         self.running_thread = None
 
+        # 日志信号
+        self.logger = Logger()
+        self.current_log_level = LogLevel.INFO
         # 线程控制
         self.pause_event = threading.Event()
         self.stop_event = threading.Event()
@@ -51,6 +60,10 @@ class AutoKeyGUI(FluentWindow):
         self.hotkey_listener.start()
 
         self.init_ui()
+
+        self.ui_log_signal.connect(self._append_log_ui)
+        self.logger.add_handler(self._gui_log_handler)
+        self.logger.info("应用初始化完成")
 
     # ---------------- UI ----------------
 
@@ -85,7 +98,7 @@ class AutoKeyGUI(FluentWindow):
         self.switchTo(self.page_main)
 
     def init_main_tab(self):
-        from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFormLayout
+        from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QTextEdit
 
         tab = QWidget()
         layout = QVBoxLayout(tab)
@@ -99,10 +112,10 @@ class AutoKeyGUI(FluentWindow):
         layout.addLayout(hl)
 
         # 速度
-        layout.addWidget(BodyLabel("按键间隔（秒）"))
+        layout.addWidget(BodyLabel("按键间隔（毫秒）[1000ms=1s]"))
         self.speed_spin = SpinBox()
-        self.speed_spin.setRange(1, 10000)
-        self.speed_spin.setValue(500)
+        self.speed_spin.setRange(1, 100000)
+        self.speed_spin.setValue(1000)
         layout.addWidget(self.speed_spin)
 
         # 状态
@@ -179,14 +192,22 @@ class AutoKeyGUI(FluentWindow):
 
     def init_logs_tab(self):
         from PyQt5.QtWidgets import QWidget, QVBoxLayout
+
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        self.log_output = PlainTextEdit()
+        self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
+        self.log_output.setAcceptRichText(True)
+        self.log_output.setPlaceholderText("日志输出...")
+        self.log_output.setStyleSheet("""
+        QTextEdit {
+            background: transparent;
+            border: none;
+        }
+        """)
         layout.addWidget(self.log_output)
-        layout.addWidget(self.log_output)
-
         return tab
+
     # ---------------- 业务 ----------------
 
     def refresh_windows(self):
@@ -194,6 +215,7 @@ class AutoKeyGUI(FluentWindow):
         self.windows = list_windows()
         for _, title in self.windows:
             self.window_list.addItem(title)
+        self.logger.info(f"刷新窗口列表，找到 {len(self.windows)} 个窗口")
 
     def current_hwnd(self):
         idx = self.window_list.currentIndex()
@@ -201,7 +223,7 @@ class AutoKeyGUI(FluentWindow):
 
     def run_simple(self):
         hwnd = self.current_hwnd()
-        interval = self.speed_spin.value() / 1000.0
+        interval = self.speed_spin.value() / 1000
         keys = self.key_capture.text().split('+')
 
         if not hwnd or not keys:
@@ -217,6 +239,7 @@ class AutoKeyGUI(FluentWindow):
             daemon=True
         )
         self.running_thread.start()
+        self.logger.info(f"开始简单模式：窗口句柄={hwnd}，按键={keys}，间隔={interval}s")
         self.update_ui_running()
 
     def run_simple_thread(self, hwnd, keys, interval):
@@ -231,6 +254,8 @@ class AutoKeyGUI(FluentWindow):
                     if k in KEY_MAP:
                         key_up(hwnd, KEY_MAP[k])
                 self.stop_event.wait(interval)
+        except Exception as e:
+            self.logger.error(f"简单模式执行异常：{e}")
         finally:
             self.update_ui_idle()
 
@@ -241,21 +266,22 @@ class AutoKeyGUI(FluentWindow):
         self.stop_event.clear()
         self.pause_event.set()
 
-        self.engine = ScriptEngine(hwnd, self.pause_event, self.stop_event)
+        self.engine = ScriptEngine(hwnd, self.pause_event, self.stop_event, logger=self.logger.log)
 
         self.running_thread = threading.Thread(
             target=self.run_advanced_thread,
             args=(script,),
-            daemon=True
+            daemon=True,
         )
         self.running_thread.start()
+        self.logger.info(f"开始执行高级脚本：窗口句柄={hwnd}")
         self.update_ui_running()
 
     def run_advanced_thread(self, script):
         try:
             self.engine.run(script)
         except Exception as e:
-            self.log_error(str(e))
+            self.logger.error(f"脚本执行异常：{e}")
         finally:
             self.update_ui_idle()
 
@@ -289,28 +315,35 @@ class AutoKeyGUI(FluentWindow):
         self.btn_adv.setEnabled(True)
 
     # ---------------- 日志 ----------------
+    def _gui_log_handler(self, level, text):
+        if level < self.current_log_level:
+            return
 
-    def log_info(self, msg):
-        self.append_log(f"[INFO] {msg}")
+        color = LOG_COLORS.get(level, "#FFFFFF")
+        html = f'<span style="color:{color}; font-family:Consolas;">{text}</span>'
 
-    def log_error(self, msg):
-        self.append_log(f"[ERROR] {msg}")
+        self.ui_log_signal.emit(html)
 
-    def append_log(self, msg):
-        QtCore.QMetaObject.invokeMethod(
-            self.log_output,
-            "appendPlainText",
-            QtCore.Qt.QueuedConnection,
-            QtCore.Q_ARG(str, msg)
-        )
+    @QtCore.pyqtSlot(str)
+    def _append_log_ui(self, html: str):
+        if not hasattr(self, "log_output"):
+            return
+
+        self.log_output.append(html)
+
+        # 自动滚动到底部（可选，但推荐）
+        bar = self.log_output.verticalScrollBar()
+        bar.setValue(bar.maximum())
 
     # ---------------- 热键 ----------------
 
     def on_global_key(self, key):
-        if key == self.hotkey_pause:
-            self.toggle_pause()
-        elif key == self.hotkey_resume:
-            self.toggle_pause()
+        if key in (self.hotkey_pause, self.hotkey_resume):
+            QtCore.QMetaObject.invokeMethod(
+                self,
+                "toggle_pause",
+                QtCore.Qt.QueuedConnection
+            )
 
 
 class CustomKeyCapture(LineEdit):

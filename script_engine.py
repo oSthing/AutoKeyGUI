@@ -1,15 +1,20 @@
 import time
 from key_sender import key_down, key_up, tap_key
 from keymap import KEY_MAP
-
+from log_system import LogLevel
 
 
 class ScriptEngine:
-    def __init__(self, hwnd, pause_event, stop_event, speed=1.0):
+    def __init__(self, hwnd, pause_event, stop_event, speed=1.0,logger=None):
         self.hwnd = hwnd
         self.pause_event = pause_event
         self.stop_event = stop_event
         self.speed = speed
+        self.logger = logger
+    # 日志记录
+    def log(self, level, msg):
+        if self.logger:
+            self.logger(level, msg)
 
     # 公共入口
     def run(self, script: str):
@@ -24,7 +29,7 @@ class ScriptEngine:
 
     def _wait(self, t):
         self.pause_event.wait()
-        self.stop_event.wait(t)
+        self.stop_event.wait(t / 1000)
 
     # 脚本执行
     def _exec(self, lines):
