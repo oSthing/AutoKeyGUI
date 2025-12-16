@@ -17,8 +17,6 @@ class AutoKeyGUI(QtWidgets.QWidget):
         self.windows = []
         self.engine = None
         self.running_thread = None
-        self.is_paused = False
-        self.pause_condition = threading.Condition()
 
         # 全局热键
         self.hotkey_pause = keyboard.Key.f8
@@ -30,6 +28,10 @@ class AutoKeyGUI(QtWidgets.QWidget):
 
         # 初始化UI
         self.init_ui()
+
+        self.stop_thread = False
+        self.is_paused = False
+        self.pause_condition = threading.Condition()
 
     def init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -212,21 +214,29 @@ WAIT 0.5''')
             self.log_error("请选择窗口和有效脚本")
             return
 
-        if self.running_thread and self.running_thread.is_alive():
-            self.log_info("已存在运行任务，停止当前任务")
-            self.stop_current_task()
+        self.stop_thread = False
+        self.is_paused = False
 
-        self.log_info(f"启动高级脚本: 窗口={hwnd}, 脚本长度={len(script)}")
-        self.engine = ScriptEngine(hwnd)
-        self.running_thread = threading.Thread(target=self.run_advanced_thread, args=(script,))
+        self.engine = ScriptEngine(
+            hwnd,
+            self.pause_condition,
+            lambda: self.is_paused,
+            lambda: self.stop_thread
+        )
+
+        self.running_thread = threading.Thread(
+            target=self.run_advanced_thread,
+            args=(script,)
+        )
         self.running_thread.daemon = True
         self.running_thread.start()
         self.update_ui_running()
 
     def run_advanced_thread(self, script):
-        """高级脚本运行线程（不支持暂停）"""
         try:
             self.engine.run(script)
+        except RuntimeError as e:
+            self.log_info(str(e))
         except Exception as e:
             self.log_error(f"脚本执行错误: {str(e)}")
         finally:
