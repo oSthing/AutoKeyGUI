@@ -40,8 +40,8 @@ UP <KEY>        : 抬起按键
 KEY C
 KEY <KEY>       : 按下并抬起
 
-WAIT 0.5
-WAIT <SECONDS>  : 等待时间（秒）
+WAIT 500
+WAIT <SECONDS>  : 等待时间（毫秒）
 
 LOOP 1 {        
     ...         
