@@ -95,22 +95,26 @@ class AutoKeyGUI(QtWidgets.QWidget):
 
         # 全局热键暂停设置
         hotkey_box = QtWidgets.QGroupBox('全局热键设置')
-        hotkey_layout = QtWidgets.QHBoxLayout(hotkey_box)
-        hotkey_box.setMaximumHeight(120)
+        hotkey_layout = QtWidgets.QFormLayout(hotkey_box)
+        hotkey_layout.setSpacing(10)
+        hotkey_layout.setContentsMargins(20, 20, 20, 20)
+        hotkey_layout.setLabelAlignment(QtCore.Qt.AlignRight)
+        hotkey_layout.setFormAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop)
+        hotkey_box.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        hotkey_box.setMaximumHeight(150)
         self.combo_pause_key = QtWidgets.QComboBox()
         self.combo_resume_key = QtWidgets.QComboBox()
-
+        self.pause_label = QtWidgets.QLabel('暂停')
+        self.resume_label = QtWidgets.QLabel('继续')
+        self.combo_pause_key.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        self.combo_resume_key.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         for i in range(1, 13):
             self.combo_pause_key.addItem(f'F{i}')
             self.combo_resume_key.addItem(f'F{i}')
-
         self.combo_pause_key.setCurrentText('F8')
         self.combo_resume_key.setCurrentText('F9')
-
-        hotkey_layout.addWidget(QtWidgets.QLabel('暂停'))
-        hotkey_layout.addWidget(self.combo_pause_key)
-        hotkey_layout.addWidget(QtWidgets.QLabel('继续'))
-        hotkey_layout.addWidget(self.combo_resume_key)
+        hotkey_layout.addRow(self.pause_label, self.combo_pause_key)
+        hotkey_layout.addRow(self.resume_label, self.combo_resume_key)
 
         layout.addWidget(hotkey_box)
 
