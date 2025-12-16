@@ -29,9 +29,12 @@ class AutoKeyGUI(QtWidgets.QWidget):
         # 初始化UI
         self.init_ui()
 
-        self.stop_thread = False
-        self.is_paused = False
-        self.pause_condition = threading.Condition()
+        self.pause_event = threading.Event()
+        self.stop_event = threading.Event()
+
+        self.pause_event.set()  # 初始运行
+        self.stop_event.clear()  # 初始不停止
+
 
     def init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -180,30 +183,23 @@ WAIT 0.5''')
         self.update_ui_running()
 
     def run_simple_thread(self, hwnd, keys, interval):
-        """带暂停功能的运行线程"""
-        self.is_paused = False
-        self.stop_thread = False
         try:
-            while not self.stop_thread:  # 检查标志位
-                with self.pause_condition:
-                    while self.is_paused and not self.stop_thread:
-                        self.pause_condition.wait()
-                if self.stop_thread:
-                    break
+            while not self.stop_event.is_set():
+                self.pause_event.wait() # 线程暂停控制
+
                 for k in keys:
                     if k in KEY_MAP:
                         key_down(hwnd, KEY_MAP[k])
-                        self.log_debug(f"DOWN: {k}")
+
                 time.sleep(0.05)
+
                 for k in reversed(keys):
                     if k in KEY_MAP:
                         key_up(hwnd, KEY_MAP[k])
-                        self.log_debug(f"UP: {k}")
-                time.sleep(interval)
-        except Exception as e:
-            self.log_error(f"运行错误: {str(e)}")
+
+                self.pause_event.wait()
+                self.stop_event.wait(interval)
         finally:
-            self.log_info("简单模式运行完成")
             self.update_ui_idle()
 
     def run_advanced(self):
@@ -219,9 +215,8 @@ WAIT 0.5''')
 
         self.engine = ScriptEngine(
             hwnd,
-            self.pause_condition,
-            lambda: self.is_paused,
-            lambda: self.stop_thread
+            self.pause_event,
+            self.stop_event
         )
 
         self.running_thread = threading.Thread(
@@ -244,46 +239,36 @@ WAIT 0.5''')
             self.update_ui_idle()
 
     def toggle_pause(self):
-        if not self.running_thread or not self.running_thread.is_alive():
-            return
-
-        if self.is_paused:
-            self.is_paused = False
-            self.btn_pause.setText('暂停')
-            self.log_info("恢复运行")
+        if self.pause_event.is_set():
+            self.pause_event.clear()
+            self.btn_pause.setText("继续")
         else:
-            self.is_paused = True
-            self.btn_pause.setText('继续')
-            self.log_info("已暂停运行")
-
-        # 通知线程继续
-        with self.pause_condition:
-            self.pause_condition.notify_all()
+            self.pause_event.set()
+            self.btn_pause.setText("暂停")
 
     def stop_current_task(self):
-        """停止当前运行任务"""
-        if self.running_thread and self.running_thread.is_alive():
-            self.log_info("正在停止运行任务...")
-            self.stop_thread = True  # 设置标志位通知线程停止
-            self.is_paused = True  # 防止线程卡在暂停状态
-            with self.pause_condition:
-                self.pause_condition.notify_all()  # 唤醒线程
-            self.running_thread.join(timeout=1.0)  # 等待线程结束
-            if self.running_thread.is_alive():
-                self.log_warning("任务停止超时，线程未完全退出")
-            else:
-                self.log_info("任务已成功停止")
-        self.running_thread = None
-        self.stop_thread = False  # 重置标志位
+        # 停止当前任务
+        self.log_info("停止当前任务")
+        self.stop_event.set()
+        self.pause_event.set()  # 防止卡在暂停
 
     def reset_task(self):
+        # 重置当前任务
         self.log_info("重置任务")
 
-        # 停止线程
-        self.stop_current_task()
+        self.stop_event.set()
+        self.pause_event.set()
 
-        # 状态恢复
-        self.is_paused = False
+        if self.running_thread and self.running_thread.is_alive():
+            self.running_thread.join(timeout=1.0)
+
+        # 清理状态
+        self.stop_event.clear()
+        self.pause_event.set()  # 默认运行态
+
+        self.running_thread = None
+
+        # UI恢复
         self.update_ui_idle()
 
     def update_ui_running(self):

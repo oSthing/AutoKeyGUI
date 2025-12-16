@@ -3,27 +3,13 @@ from key_sender import key_down, key_up, tap_key
 from keymap import KEY_MAP
 
 
+
 class ScriptEngine:
-    def __init__(
-        self,
-        hwnd,
-        pause_condition,
-        is_paused_cb,
-        stop_cb,
-        speed=1.0
-    ):
-        """
-        :param hwnd: 目标窗口句柄
-        :param pause_condition: threading.Condition（来自主窗口）
-        :param is_paused_cb: 回调，返回当前是否暂停
-        :param stop_cb: 回调，返回是否应停止
-        :param speed: 脚本速度倍率
-        """
+    def __init__(self, hwnd, pause_event, stop_event, speed=1.0):
         self.hwnd = hwnd
+        self.pause_event = pause_event
+        self.stop_event = stop_event
         self.speed = speed
-        self.pause_condition = pause_condition
-        self.is_paused = is_paused_cb
-        self.should_stop = stop_cb
 
     # 公共入口
     def run(self, script: str):
@@ -31,27 +17,20 @@ class ScriptEngine:
         self._exec(lines)
 
     # 线程控制
-    def _check_control(self):
-        # 停止优先
-        if self.should_stop():
+    def _check(self):
+        self.pause_event.wait()
+        if self.stop_event.is_set():
             raise RuntimeError("脚本被停止")
 
-        # 暂停
-        with self.pause_condition:
-            while self.is_paused() and not self.should_stop():
-                self.pause_condition.wait()
-
-    def _wait(self, seconds: float):
-        end = time.time() + seconds
-        while time.time() < end:
-            self._check_control()
-            time.sleep(0.05)
+    def _wait(self, t):
+        self.pause_event.wait()
+        self.stop_event.wait(t)
 
     # 脚本执行
     def _exec(self, lines):
         i = 0
         while i < len(lines):
-            self._check_control()
+            self._check()
 
             parts = lines[i].split()
             cmd = parts[0].upper()
@@ -90,15 +69,16 @@ class ScriptEngine:
                     i += 1
 
                 if count == 0:  # 无限循环
-                    while not self.should_stop():
+                    while not self.stop_event.is_set():
                         self._exec(block)
                 else:
                     for _ in range(count):
-                        if self.should_stop():
+                        if self.stop_event.is_set():
                             break
                         self._exec(block)
 
-            #  未知指令 
+
+            #  未知指令
             else:
                 raise ValueError(f"未知指令: {lines[i]}")
 
