@@ -254,6 +254,7 @@ class AutoKeyGUI(FluentWindow):
                     if k in KEY_MAP:
                         key_up(hwnd, KEY_MAP[k])
                 self.stop_event.wait(interval)
+                self.logger.debug(f"发送(键/组合键)：{keys}")
         except Exception as e:
             self.logger.error(f"简单模式执行异常：{e}")
         finally:
@@ -289,14 +290,17 @@ class AutoKeyGUI(FluentWindow):
         if self.pause_event.is_set():
             self.pause_event.clear()
             self.btn_pause.setText("继续")
+            self.logger.info("所有线程任务已暂停")
         else:
             self.pause_event.set()
             self.btn_pause.setText("暂停")
+            self.logger.info("所有线程任务已继续")
 
     def reset_task(self):
         self.stop_event.set()
         self.pause_event.set()
         self.update_ui_idle()
+        self.logger.info("所有线程任务已重置")
 
     # ---------------- UI 状态 ----------------
 

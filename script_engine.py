@@ -45,23 +45,27 @@ class ScriptEngine:
                 key = parts[1].upper()
                 if key in KEY_MAP:
                     tap_key(self.hwnd, KEY_MAP[key])
+                    self.logger(LogLevel.DEBUG, f"Tapped key: {key}")
 
             # 按下
             elif cmd == 'DOWN':
                 key = parts[1].upper()
                 if key in KEY_MAP:
                     key_down(self.hwnd, KEY_MAP[key])
+                    self.logger(LogLevel.DEBUG, f"Key down: {key}")
 
             # 松开
             elif cmd == 'UP':
                 key = parts[1].upper()
                 if key in KEY_MAP:
                     key_up(self.hwnd, KEY_MAP[key])
+                    self.logger(LogLevel.DEBUG, f"Key up: {key}")
 
             # 等待
             elif cmd == 'WAIT':
                 t = float(parts[1]) / self.speed
                 self._wait(t)
+                self.logger(LogLevel.DEBUG, f"Waited for: {t} ms")
 
             # 循环
             elif cmd == 'LOOP':
@@ -72,19 +76,23 @@ class ScriptEngine:
                 while i < len(lines) and not lines[i].startswith('}'):
                     block.append(lines[i])
                     i += 1
-
+                n=0
                 if count == 0:  # 无限循环
                     while not self.stop_event.is_set():
                         self._exec(block)
+                        n+=1
+                        self.logger(LogLevel.DEBUG, f"Completed infinite loop iteration: {n}")
                 else:
-                    for _ in range(count):
+                    for j in range(count):
                         if self.stop_event.is_set():
                             break
                         self._exec(block)
+                        self.logger(LogLevel.DEBUG, f"Completed loop iteration: {j + 1}")
 
 
             #  未知指令
             else:
+
                 raise ValueError(f"未知指令: {lines[i]}")
 
             i += 1
